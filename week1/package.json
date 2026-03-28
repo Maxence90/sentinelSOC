@@ -1,0 +1,40 @@
+{
+  "name": "sentinelsoc",
+  "version": "1.0.0",
+  "description": "SentinelSOC: Ethereum transaction parsing, mempool monitoring, and PostgreSQL persistence",
+  "main": "dist/index.js",
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "mempool:listen": "ts-node src/scripts/listenMempool.ts",
+    "tx:parse": "ts-node src/scripts/parseTransactions.ts",
+    "db:init": "ts-node src/scripts/initDatabase.ts",
+    "db:demo": "ts-node src/scripts/demoDatabase.ts",
+    "start": "node dist/index.js",
+    "watch": "nodemon --exec ts-node src/index.ts",
+    "integrated": "ts-node src/scripts/runIntegrated.ts"
+  },
+  "keywords": [
+    "blockchain",
+    "defi",
+    "security",
+    "mempool",
+    "postgresql"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@types/pg": "^8.20.0",
+    "axios": "^1.6.2",
+    "dotenv": "^16.3.1",
+    "ethers": "^6.10.0",
+    "pg": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "nodemon": "^3.0.2",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.3.3"
+  }
+}
