@@ -2,12 +2,14 @@
 
 一个面向 DeFi 风险监控场景的 TypeScript 项目，覆盖三条主链路：实时监听待处理交易、解析 calldata、将分析结果持久化到 PostgreSQL。
 
-这次重构完成了四个关键优化：
+这次重构完成了六个关键优化：
 
 - 去掉 addRiskHit 和 addLog 里按 txHash 反查 transaction id 的重复查询
 - 将 transaction、risk_hits、transaction_logs 的写入合并为单个数据库事务
 - 将数据库连接、Schema 初始化、演示脚本拆分为独立模块
 - 将存储字段从 value_eth、call_data_length 收正为 value_wei、call_data_bytes
+- 为 integrated 监控增加启动重试与 HTTP provider 预热，降低启动阶段的瞬时失败概率
+- 为 pending 处理增加有限队列、固定并发和 risk_hits 去重键，降低重复消费和 RPC 过载影响
 
 ## 项目结构
 
@@ -108,8 +110,15 @@ npm run integrated
 - TransactionService.saveAnalysisResult() 使用单事务保存交易、风险命中和处理日志
 - 风险命中和日志插入改为直接使用 transactionId，不再重复查询 tx_hash
 - Schema 初始化模块内置旧字段迁移逻辑，可将历史 value_eth 自动迁移到 value_wei
+- risk_hits 新增 dedupe_key，并在数据库层以 `(transaction_id, dedupe_key)` 保证幂等
 
-### 3. 数据库模型
+### 3. 监控层优化
+
+- integratedMonitor 在启动阶段对 WebSocket 网络探测增加重试，并预热 HTTP 解析链路
+- pending 交易先进入有限队列，再由固定 worker 并发消费，避免无限并发拉高 RPC 错误率
+- pending 解析增加有限次重试，缓解节点刚收到 hash 但暂时查不到交易详情的窗口问题
+
+### 4. 数据库模型
 
 ```sql
 CREATE TABLE transactions (
@@ -136,11 +145,13 @@ CREATE TABLE transactions (
 CREATE TABLE risk_hits (
   id BIGSERIAL PRIMARY KEY,
   transaction_id BIGINT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+  dedupe_key VARCHAR(128) NOT NULL,
   rule_name VARCHAR(128) NOT NULL,
   score_delta INTEGER NOT NULL,
   reason TEXT NOT NULL,
   evidence JSONB,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (transaction_id, dedupe_key)
 );
 ```
 
@@ -159,16 +170,24 @@ CREATE TABLE transaction_logs (
 
 ```text
 pending tx hash
-  -> listeners/mempoolListener.ts
   -> parsers/transactionParser.ts
   -> monitoring/integratedMonitor.ts
   -> storage/transactionService.ts
   -> PostgreSQL
 ```
 
+## 最近验证
+
+- `npm run build` 通过
+- `npm run db:init` 通过
+- `npm run db:demo` 通过
+- `npm run integrated` 已做短时烟雾测试，成功完成启动、监听、解析与落库
+- 本地验证中 risk_hits 总数与按 `(transaction_id, dedupe_key)` 去重后的总数一致，去重键生效
+
 ## 后续扩展方向
 
 - 将规则引擎从 integratedMonitor.ts 抽成独立 rules 模块
-- 为 risk_hits 增加规则版本号和去重键
+- 为 risk_hits 增加规则版本号
+- 为 transaction_logs 增加去重键
 - 增加告警推送和人工确认工作流
 - 增加 dashboard 或 API 层供前端查询

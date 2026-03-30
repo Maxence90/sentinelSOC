@@ -29,6 +29,7 @@ export interface StoredLog {
 export interface RiskHit {
   id: number;
   transactionId: number;
+  dedupeKey: string;
   ruleName: string;
   scoreDelta: number;
   reason: string;
@@ -53,6 +54,7 @@ export interface SaveTransactionInput {
 }
 
 export interface RiskHitInput {
+  dedupeKey?: string;
   ruleName: string;
   scoreDelta: number;
   reason: string;

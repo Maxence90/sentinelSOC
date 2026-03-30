@@ -87,6 +87,7 @@ export async function initializeDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS risk_hits (
       id BIGSERIAL PRIMARY KEY,
       transaction_id BIGINT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+      dedupe_key VARCHAR(128) NOT NULL,
       rule_name VARCHAR(128) NOT NULL,
       score_delta INTEGER NOT NULL,
       reason TEXT NOT NULL,
@@ -94,6 +95,28 @@ export async function initializeDatabase(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+
+  await pool.query('ALTER TABLE risk_hits ADD COLUMN IF NOT EXISTS dedupe_key VARCHAR(128)');
+  await pool.query(`
+    UPDATE risk_hits
+    SET dedupe_key = rule_name
+    WHERE dedupe_key IS NULL OR dedupe_key = ''
+  `);
+  await pool.query(`
+    WITH ranked_hits AS (
+      SELECT
+        id,
+        ROW_NUMBER() OVER (PARTITION BY transaction_id, dedupe_key ORDER BY id DESC) AS row_number
+      FROM risk_hits
+    )
+    DELETE FROM risk_hits
+    WHERE id IN (
+      SELECT id
+      FROM ranked_hits
+      WHERE row_number > 1
+    )
+  `);
+  await pool.query('ALTER TABLE risk_hits ALTER COLUMN dedupe_key SET NOT NULL');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS transaction_logs (
@@ -112,6 +135,7 @@ export async function initializeDatabase(): Promise<void> {
   await pool.query('CREATE INDEX IF NOT EXISTS idx_transactions_is_risky ON transactions (is_risky)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions (created_at DESC)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_risk_hits_transaction_id ON risk_hits (transaction_id)');
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_risk_hits_transaction_dedupe_key ON risk_hits (transaction_id, dedupe_key)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_transaction_logs_transaction_id ON transaction_logs (transaction_id)');
 
   logger.info('✅ PostgreSQL schema initialized');

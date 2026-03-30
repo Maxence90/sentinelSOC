@@ -24,6 +24,14 @@
 - saveAnalysisResult() 通过单事务一次性写入 transactions、risk_hits、transaction_logs
 - addRiskHit() 和 addLog() 改为以 transactionId 为参数，不再重复按 txHash 查询
 - integratedMonitor 直接调用事务化保存接口，避免半成功半失败的数据状态
+- risk_hits 已新增 dedupe_key，并通过 `(transaction_id, dedupe_key)` 唯一索引保证幂等
+
+### integrated 稳定性
+
+- 启动阶段增加 WebSocket 网络探测重试
+- 启动阶段增加 HTTP provider 预热
+- pending 处理改为有限队列 + 固定并发 worker
+- pending 交易解析增加有限次重试
 
 ### 字段语义
 
@@ -42,9 +50,12 @@
 ```text
 ✅ npm run build
 ✅ npm run db:init
+✅ npm run db:demo
 ✅ 本地 PostgreSQL 连接
 ✅ Schema 初始化与旧字段迁移逻辑
 ✅ TypeScript 严格模式检查
+✅ risk_hits dedupe_key 幂等写入验证
+✅ npm run integrated 短时烟雾测试（成功启动、监听、解析、落库）
 ```
 
 ## 当前命令集
@@ -63,7 +74,7 @@ npm run integrated
 ## 下一步建议
 
 1. 把规则命中逻辑从 integratedMonitor.ts 抽到独立 rules 模块
-2. 为 risk_hits 增加去重键，避免重复消费同一笔交易时重复命中
+2. 为 transaction_logs 增加去重键，避免重复消费时日志重复写入
 3. 增加 REST API 或 dashboard 便于展示存储结果
 
-**最后更新**: 2026-03-28
+**最后更新**: 2026-03-30

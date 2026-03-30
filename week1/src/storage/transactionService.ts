@@ -47,6 +47,7 @@ type LogRow = {
 type RiskHitRow = {
   id: number;
   transaction_id: number;
+  dedupe_key: string;
   rule_name: string;
   score_delta: number;
   reason: string;
@@ -90,11 +91,22 @@ function mapRiskHitRow(row: RiskHitRow): RiskHit {
   return {
     id: row.id,
     transactionId: row.transaction_id,
+    dedupeKey: row.dedupe_key,
     ruleName: row.rule_name,
     scoreDelta: row.score_delta,
     reason: row.reason,
     evidence: row.evidence,
     createdAt: row.created_at.toISOString(),
+  };
+}
+
+function normalizeRiskHitInput(input: RiskHitInput): Required<RiskHitInput> {
+  return {
+    dedupeKey: input.dedupeKey || input.ruleName,
+    ruleName: input.ruleName,
+    scoreDelta: input.scoreDelta,
+    reason: input.reason,
+    evidence: input.evidence || {},
   };
 }
 
@@ -179,13 +191,20 @@ export class TransactionService {
     transactionId: number,
     input: RiskHitInput
   ): Promise<RiskHit> {
+    const data = normalizeRiskHitInput(input);
     const result = await executor.query<RiskHitRow>(
       `
-        INSERT INTO risk_hits (transaction_id, rule_name, score_delta, reason, evidence)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO risk_hits (transaction_id, dedupe_key, rule_name, score_delta, reason, evidence)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (transaction_id, dedupe_key)
+        DO UPDATE SET
+          rule_name = EXCLUDED.rule_name,
+          score_delta = EXCLUDED.score_delta,
+          reason = EXCLUDED.reason,
+          evidence = EXCLUDED.evidence
         RETURNING *
       `,
-      [transactionId, input.ruleName, input.scoreDelta, input.reason, input.evidence || null]
+      [transactionId, data.dedupeKey, data.ruleName, data.scoreDelta, data.reason, data.evidence]
     );
 
     return mapRiskHitRow(result.rows[0]);
@@ -261,10 +280,11 @@ export class TransactionService {
     ruleName: string,
     scoreDelta: number,
     reason: string,
-    evidence?: Record<string, unknown>
+    evidence?: Record<string, unknown>,
+    dedupeKey?: string
   ): Promise<RiskHit> {
     try {
-      return await this.insertRiskHit(getPool(), transactionId, { ruleName, scoreDelta, reason, evidence });
+      return await this.insertRiskHit(getPool(), transactionId, { dedupeKey, ruleName, scoreDelta, reason, evidence });
     } catch (error) {
       logger.error('Error adding risk hit', error);
       throw error;

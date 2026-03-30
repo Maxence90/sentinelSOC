@@ -32,6 +32,7 @@ export async function runDatabaseDemo(): Promise<void> {
       },
       riskHits: [
         {
+          dedupeKey: 'known_protocol_low_risk',
           ruleName: 'known_protocol_low_risk',
           scoreDelta: 5,
           reason: 'Known protocol interaction kept for explainability demo',

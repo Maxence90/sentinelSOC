@@ -54,7 +54,7 @@ npm run integrated
 | npm run db:demo | 插入一条样例分析记录 |
 | npm run tx:parse | 解析最近区块的交易 |
 | npm run mempool:listen | 监听 pending 交易 |
-| npm run integrated | 运行完整监控链路 |
+| npm run integrated | 运行完整监控链路，包含启动重试、预热和有限队列 |
 
 ## 目录速查
 
@@ -87,10 +87,17 @@ src/
 - 检查网络是否允许 WSS 出站连接
 - 将 LOG_LEVEL 调到 debug 观察 provider 错误
 
-### 4. 旧库里还保留 value_eth 和 call_data_length 吗
+### 4. integrated 出现 Pending queue is full
+
+- 这是当前的限流保护在生效，不表示服务已经崩溃
+- 当前 RPC 配额不足以吃下全部 pending 流量时，会主动丢弃超出队列容量的交易
+- 如果希望提高吞吐，可以调大队列、并发数，或更换更高配额的 RPC
+
+### 5. 旧库里还保留 value_eth 和 call_data_length 吗
 
 - db:init 会自动把旧字段迁移到 value_wei 和 call_data_bytes
 - 迁移完成后旧字段会被删除
+- risk_hits 也会自动补 dedupe_key，并清理旧的重复命中记录
 
 ## 推荐验证顺序
 
@@ -99,4 +106,4 @@ src/
 3. 然后跑 npm run db:demo，验证事务化写入链路
 4. 最后再跑 tx:parse 或 integrated
 
-**最后更新**: 2026-03-28
+**最后更新**: 2026-03-30

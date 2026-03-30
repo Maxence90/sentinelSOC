@@ -1,9 +1,10 @@
+//以太坊内存池监听器
+//早期原型，用于快速验证监听功能是否正常
 import 'dotenv/config';
 import { ethers } from 'ethers';
 import { Logger } from '../utils/logger';
 
 const logger = new Logger('MempoolListener');
-
 interface TransactionDetails {
   hash: string;
   from: string;

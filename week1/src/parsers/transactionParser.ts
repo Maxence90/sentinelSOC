@@ -1,3 +1,4 @@
+//解析脚本，负责将原始交易数据转换成结构化的格式，提取协议、方法、参数等信息，为后续的分析和存储提供基础数据。
 import 'dotenv/config';
 import { ethers } from 'ethers';
 import { ABIS } from '../utils/abis';

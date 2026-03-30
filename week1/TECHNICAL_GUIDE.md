@@ -113,9 +113,10 @@ await service.saveAnalysisResult({
 
 1. BEGIN
 2. UPSERT transactions
-3. INSERT risk_hits
-4. INSERT transaction_logs
-5. COMMIT
+3. DELETE risk_hits / transaction_logs for current transaction
+4. INSERT risk_hits
+5. INSERT transaction_logs
+6. COMMIT
 
 任何一步异常都会 ROLLBACK。
 
@@ -130,6 +131,7 @@ await service.saveAnalysisResult({
 
 - 先通过 UPSERT 拿到 transaction.id
 - 后续 risk_hits 和 logs 直接使用 transactionId
+- risk_hits 支持 dedupe_key，增量写入场景下可通过 `(transaction_id, dedupe_key)` 保证幂等
 
 这样减少了 SQL 往返，也降低了高并发下的不一致风险。
 
@@ -165,6 +167,7 @@ schema.ts 会自动兼容旧数据库：
 
 - 如果检测到 value_eth，则新建 value_wei 并按 10^18 进行迁移
 - 如果检测到 call_data_length，则重命名为 call_data_bytes
+- 如果 risk_hits 里没有 dedupe_key，则自动补列、按 rule_name 回填并清理重复记录
 - 迁移完成后删除旧字段
 
 这使得本地已有数据库不需要手工删表重建。
@@ -175,11 +178,20 @@ monitoring/integratedMonitor.ts 的端到端流程如下：
 
 ```text
 pending tx hash
+  -> connectWithRetry() / warmUpProviders()
+  -> bounded pending queue
   -> parseTransaction()
   -> evaluateRiskHits()
   -> saveAnalysisResult()
   -> getStatistics() / detectRiskPatterns()
 ```
+
+当前 integratedMonitor 的稳定性策略包括：
+
+- 启动阶段对 WebSocket provider 网络探测做有限次重试
+- 启动阶段预热 HTTP 解析链路，减少首次请求失败
+- pending 交易进入固定大小队列，由固定 worker 并发消费
+- pending 解析采用有限次重试，缓解节点暂时查不到交易详情的问题
 
 MVP 风险规则当前包括：
 
@@ -190,10 +202,11 @@ MVP 风险规则当前包括：
 
 ## 9. 当前保留的技术债
 
-1. risk_hits 还没有幂等键，重复消费相同交易时可能重复插入
+1. 队列在免费 RPC 配额下仍可能打满，当前策略是丢弃超出队列容量的 pending 交易
 2. 规则逻辑仍内嵌在 integratedMonitor.ts，后续应抽成 rules 模块
 3. transactions 表还缺少 block_number、nonce、gas_price_wei 等字段
-4. 目前仍以控制台日志为主，尚未接入外部告警系统
+4. transaction_logs 仍缺少数据库层去重键
+5. 目前仍以控制台日志为主，尚未接入外部告警系统
 
 ## 10. 推荐后续演进
 
@@ -202,4 +215,4 @@ MVP 风险规则当前包括：
 3. 新增 alerts 目录，对接飞书或钉钉
 4. 新增 tests 目录，补事务化写入和迁移逻辑的单元测试
 
-**最后更新**: 2026-03-28
+**最后更新**: 2026-03-30
