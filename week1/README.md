@@ -19,7 +19,16 @@ src/
 ├── listeners/
 │   └── mempoolListener.ts
 ├── monitoring/
-│   └── integratedMonitor.ts
+│   ├── integratedMonitor.ts
+│   └── rules/
+│       ├── defaultRules.ts
+│       ├── index.ts
+│       ├── localRulesScorer.ts
+│       └── types.ts
+├── notifications/
+│   ├── feishuNotifier.ts
+│   ├── index.ts
+│   └── types.ts
 ├── parsers/
 │   └── transactionParser.ts
 ├── scripts/
@@ -61,6 +70,13 @@ cp .env.example .env
 INFURA_WS_URL=wss://mainnet.infura.io/ws/v3/YOUR_INFURA_KEY
 INFURA_HTTP_URL=https://mainnet.infura.io/v3/YOUR_INFURA_KEY
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/sentinelsoc
+```
+
+如果需要飞书风险告警，可额外配置：
+
+```env
+FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/your-webhook
+FEISHU_ALERT_MIN_SCORE=30
 ```
 
 ### 3. 初始化数据库 Schema
@@ -117,6 +133,8 @@ npm run integrated
 - integratedMonitor 在启动阶段对 WebSocket 网络探测增加重试，并预热 HTTP 解析链路
 - pending 交易先进入有限队列，再由固定 worker 并发消费，避免无限并发拉高 RPC 错误率
 - pending 解析增加有限次重试，缓解节点刚收到 hash 但暂时查不到交易详情的窗口问题
+- 本地规则已拆到 monitoring/rules 模块，便于后续替换为配置化规则或 0G Compute scorer
+- 风险告警已抽象为 notifications 模块，当前内置飞书 webhook 骨架且不阻塞主链路
 
 ### 4. 数据库模型
 
@@ -171,8 +189,10 @@ CREATE TABLE transaction_logs (
 ```text
 pending tx hash
   -> parsers/transactionParser.ts
+  -> monitoring/rules/localRulesScorer.ts
   -> monitoring/integratedMonitor.ts
   -> storage/transactionService.ts
+  -> notifications/feishuNotifier.ts
   -> PostgreSQL
 ```
 
@@ -186,8 +206,8 @@ pending tx hash
 
 ## 后续扩展方向
 
-- 将规则引擎从 integratedMonitor.ts 抽成独立 rules 模块
 - 为 risk_hits 增加规则版本号
 - 为 transaction_logs 增加去重键
-- 增加告警推送和人工确认工作流
+- 将当前 TypeScript 规则配置升级为 JSON 或数据库驱动的规则引擎
+- 将当前飞书文本告警升级为交互式卡片和人工确认工作流
 - 增加 dashboard 或 API 层供前端查询

@@ -23,6 +23,13 @@ INFURA_HTTP_URL=https://mainnet.infura.io/v3/YOUR_INFURA_KEY
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/sentinelsoc
 ```
 
+如果你希望接收飞书告警，再额外配置：
+
+```env
+FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/your-webhook
+FEISHU_ALERT_MIN_SCORE=30
+```
+
 ### 3. 初始化数据库
 
 ```bash
@@ -61,8 +68,10 @@ npm run integrated
 ```text
 src/
 ├── listeners/    # 实时监听
+├── notifications/ # 告警通知
 ├── parsers/      # 交易解析
 ├── monitoring/   # 端到端监控
+├── monitoring/rules/ # 本地规则评分
 ├── scripts/      # npm 脚本入口
 ├── storage/      # PostgreSQL 持久化
 └── utils/        # ABI 与日志工具

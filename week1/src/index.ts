@@ -16,9 +16,11 @@ async function main(): Promise<void> {
   logger.info('To start development:');
   logger.info('  1. Create .env file from .env.example');
   logger.info('  2. Add your Infura or Alchemy API key and PostgreSQL DATABASE_URL');
+  logger.info('  3. Optional: configure FEISHU_WEBHOOK_URL to receive risk alerts');
   logger.info('  3. Run: npm run db:init');
   logger.info('  4. Optional: run npm run db:demo');
   logger.info('  5. Run: npm run mempool:listen');
+  logger.info('  6. Run: npm run integrated');
 }
 
 main().catch(logger.error);

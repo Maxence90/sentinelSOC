@@ -1,7 +1,9 @@
 //集成：以太坊交易池监听器升级版，集成了解析、存储、评分等完整能力
 import 'dotenv/config';
 import { ethers } from 'ethers';
+import { createRiskNotifier, RiskNotifier } from '../notifications';
 import { TransactionParser, ParsedTransaction } from '../parsers/transactionParser';
+import { LocalRulesScorer, RiskScorer } from './rules';
 import { TransactionService } from '../storage/transactionService';
 import { closeDatabase } from '../storage/db/connection';
 import { initializeDatabase } from '../storage/db/schema';
@@ -9,17 +11,11 @@ import { Logger } from '../utils/logger';
 
 const logger = new Logger('IntegratedMonitor');
 
-interface EvaluatedRiskHit {
-  dedupeKey: string;
-  ruleName: string;
-  scoreDelta: number;
-  reason: string;
-  evidence?: Record<string, unknown>;
-}
-
 export class IntegratedTransactionMonitor {
   private parser: TransactionParser;
+  private scorer: RiskScorer;
   private service: TransactionService;
+  private notifier: RiskNotifier;
   private provider: ethers.WebSocketProvider;
   private processedCount: number = 0;
   private receivedPendingCount: number = 0;
@@ -39,10 +35,17 @@ export class IntegratedTransactionMonitor {
   /**
    * 初始化一体化监控器，分别准备实时监听、交易解析和持久化服务。
    */
-  constructor(wsUrl: string, httpUrl: string) {
+  constructor(
+    wsUrl: string,
+    httpUrl: string,
+    scorer: RiskScorer = new LocalRulesScorer(),
+    notifier: RiskNotifier = createRiskNotifier(),
+  ) {
     this.provider = new ethers.WebSocketProvider(wsUrl);//用于实时监听
     this.parser = new TransactionParser(httpUrl);//用于有效查询
+    this.scorer = scorer;
     this.service = new TransactionService();
+    this.notifier = notifier;
   }
 
   /**
@@ -185,9 +188,7 @@ export class IntegratedTransactionMonitor {
         return;
       }
 
-      const riskHits = this.evaluateRiskHits(parsed);
-      const riskScore = Math.min(riskHits.reduce((total, hit) => total + hit.scoreDelta, 0), 100);
-      const isRisky = riskScore >= 30;
+      const evaluation = this.scorer.evaluate(parsed);
 
       await this.service.saveAnalysisResult({
         transaction: {
@@ -201,25 +202,44 @@ export class IntegratedTransactionMonitor {
           methodSignature: parsed.methodSignature,
           callDataBytes: parsed.callDataBytes,
           parsedParameters: parsed.parameters,
-          riskScore,
-          isRisky,
-          riskReason: this.getRiskReason(parsed) || null,
+          riskScore: evaluation.riskScore,
+          isRisky: evaluation.isRisky,
+          riskReason: evaluation.riskReason,
         },
-        riskHits,
+        riskHits: evaluation.riskHits,
         log: {
-          action: isRisky ? 'ANALYZED' : 'PARSED',
+          action: evaluation.isRisky ? 'ANALYZED' : 'PARSED',
           details: `Detected ${parsed.protocol} transaction: ${parsed.methodName}`,
           metadata: {
             protocol: parsed.protocol,
-            riskScore,
-            isRisky,
+            riskScore: evaluation.riskScore,
+            isRisky: evaluation.isRisky,
           },
         },
       });
 
+      if (evaluation.isRisky) {
+        void this.notifier.notifyRiskEvent({
+          txHash: parsed.txHash,
+          chainId: parsed.chainId,
+          protocol: parsed.protocol,
+          methodName: parsed.methodName,
+          from: parsed.from,
+          to: parsed.to,
+          valueEth: parsed.valueEth,
+          valueWei: parsed.valueWei,
+          riskScore: evaluation.riskScore,
+          riskReason: evaluation.riskReason,
+          riskHits: evaluation.riskHits,
+          detectedAt: new Date().toISOString(),
+        }).catch((error) => {
+          logger.warn('Failed to send risk alert', { txHash, error: String(error) });
+        });
+      }
+
       this.processedCount++;
-      const status = isRisky ? '⚠️  [RISKY]' : '✅';
-      logger.info(`${status} #${this.processedCount} - ${parsed.protocol}: ${parsed.methodName} (Risk: ${riskScore})`);
+      const status = evaluation.isRisky ? '⚠️  [RISKY]' : '✅';
+      logger.info(`${status} #${this.processedCount} - ${parsed.protocol}: ${parsed.methodName} (Risk: ${evaluation.riskScore})`);
     } catch (error) {
       logger.warn('Error processing transaction', { txHash, error: String(error) });
     }
@@ -316,88 +336,6 @@ export class IntegratedTransactionMonitor {
     await this.printStats();
     await closeDatabase();
     process.exit(0);
-  }
-
-  /**
-   * 按 MVP 规则为解析后的交易生成风险命中项及对应分值。
-   */
-  private evaluateRiskHits(parsed: ParsedTransaction): EvaluatedRiskHit[] {
-    const hits: EvaluatedRiskHit[] = [];
-    const highRiskProtocols = ['1inch Router', 'Unknown'];
-    if (highRiskProtocols.includes(parsed.protocol)) {
-      hits.push({
-        dedupeKey: 'high_risk_protocol',
-        ruleName: 'high_risk_protocol',
-        scoreDelta: 20,
-        reason: `Protocol ${parsed.protocol} is treated as high risk in the MVP rules`,
-        evidence: { protocol: parsed.protocol },
-      });
-    }
-
-    const riskyMethods = ['approve', 'transferFrom', 'permit', 'swap', 'flashLoan'];
-    if (parsed.methodName && riskyMethods.some((method) => parsed.methodName?.includes(method))) {
-      hits.push({
-        dedupeKey: `risky_method_detected:${parsed.methodName}`,
-        ruleName: 'risky_method_detected',
-        scoreDelta: 15,
-        reason: `Method ${parsed.methodName} matched risky method keywords`,
-        evidence: { methodName: parsed.methodName },
-      });
-    }
-
-    if (parseFloat(parsed.valueEth) > 10) {
-      hits.push({
-        dedupeKey: 'large_value_transfer',
-        ruleName: 'large_value_transfer',
-        scoreDelta: 10,
-        reason: 'Transaction value exceeded the 10 ETH MVP threshold',
-        evidence: { valueEth: parsed.valueEth, valueWei: parsed.valueWei },
-      });
-    }
-
-    if (parsed.to === '0x0000000000000000000000000000000000000000') {
-      hits.push({
-        dedupeKey: 'contract_creation_detected',
-        ruleName: 'contract_creation_detected',
-        scoreDelta: 25,
-        reason: 'Contract creation is treated as higher risk in the MVP ruleset',
-        evidence: { to: parsed.to },
-      });
-    }
-
-    return hits;
-  }
-
-  /**
-   * 将命中的风险特征整理为可读的原因摘要，便于后续展示和审计。
-   */
-  private getRiskReason(parsed: ParsedTransaction): string {
-    const reasons: string[] = [];
-
-    // 这里生成的是人类可读的摘要；更完整的风险命中和分数已经由 evaluateRiskHits 负责。
-    if (parsed.methodName?.includes('approve')) {
-      reasons.push('ERC20 approval detected');
-    }
-    if (parsed.methodName?.includes('transferFrom')) {
-      reasons.push('Delegated token transfer detected');
-    }
-    if (parsed.methodName?.includes('permit')) {
-      reasons.push('Off-chain approval signature detected');
-    }
-    if (parsed.methodName?.includes('swap')) {
-      reasons.push('Token swap detected');
-    }
-    if (parsed.methodName?.includes('flashLoan')) {
-      reasons.push('Flash loan operation detected');
-    }
-    if (parsed.protocol === '1inch Router') {
-      reasons.push('Multi-protocol aggregator');
-    }
-    if (parseFloat(parsed.valueEth) > 10) {
-      reasons.push('Large ETH value transfer');
-    }
-
-    return reasons.join('; ');
   }
 
   /**
