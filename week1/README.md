@@ -94,6 +94,7 @@ npm run db:demo
 ### 5. 运行功能脚本
 
 ```bash
+npm run health:check
 npm run tx:parse
 npm run mempool:listen
 npm run integrated
@@ -105,6 +106,7 @@ npm run integrated
 |------|------|
 | npm run dev | 输出项目信息 |
 | npm run build | 编译 TypeScript |
+| npm run health:check | 一键验证 HTTP RPC、WebSocket RPC、PostgreSQL、飞书 webhook |
 | npm run clean | 清理 dist |
 | npm run db:init | 初始化或迁移 PostgreSQL Schema |
 | npm run db:demo | 插入一条演示分析结果 |
