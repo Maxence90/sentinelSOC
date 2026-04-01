@@ -1,0 +1,28 @@
+{
+  "key": "monad",
+  "displayName": "Monad",
+  "networkFamily": "high-performance-evm",
+  "blockTimeMs": 400,
+  "envPrefix": "MONAD",
+  "rpcEnv": {
+    "websocket": ["MONAD_WS_URL"],
+    "http": ["MONAD_HTTP_URL"]
+  },
+  "runtime": {
+    "analysisTimeoutMs": 300,
+    "maxQueueSize": 1000,
+    "workerCount": 4,
+    "riskThreshold": 30,
+    "startupRetryAttempts": 3,
+    "startupRetryDelayMs": 750,
+    "pendingRetryAttempts": 2,
+    "pendingRetryDelayMs": 100
+  },
+  "fastRules": {
+    "highRiskMethodSignatures": ["0x095ea7b3", "0x23b872dd", "0xd505accf"],
+    "blacklistedAddresses": [],
+    "knownAttackContracts": [],
+    "largeValueThresholdWei": "1000000000000000000"
+  },
+  "protocolRegistry": []
+}

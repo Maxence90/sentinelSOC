@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import axios from 'axios';
 import { ethers } from 'ethers';
+import { ChainConfig, loadChainConfig } from '../config';
 import { closeDatabase, getPool } from '../storage/db/connection';
 import { Logger } from '../utils/logger';
 
@@ -19,13 +20,21 @@ interface HealthCheckResult {
 }
 
 async function main(): Promise<void> {
+  const chainConfig = loadChainConfig();
   const results: HealthCheckResult[] = [];
 
   try {
-    results.push(await checkHttpRpc());
-    results.push(await checkWebSocketRpc());
+    logger.info('Running health check with chain configuration', {
+      chain: chainConfig.key,
+      displayName: chainConfig.displayName,
+      configPath: chainConfig.configPath,
+      runtime: chainConfig.runtime,
+    });
+
+    results.push(await checkHttpRpc(chainConfig));
+    results.push(await checkWebSocketRpc(chainConfig));
     results.push(await checkDatabase());
-    results.push(await checkFeishu(results));
+    results.push(await checkFeishu(chainConfig, results));
     printSummary(results);
     process.exitCode = results.some((result) => result.status === 'failed') ? 1 : 0;
   } finally {
@@ -33,13 +42,16 @@ async function main(): Promise<void> {
   }
 }
 
-async function checkHttpRpc(): Promise<HealthCheckResult> {
-  const httpUrl = process.env.INFURA_HTTP_URL;
+async function checkHttpRpc(chainConfig: ChainConfig): Promise<HealthCheckResult> {
+  const httpUrl = chainConfig.rpc.httpUrl;
   if (!httpUrl) {
-    return failedConfig('HTTP RPC', 'INFURA_HTTP_URL is required');
+    return failedConfig(
+      `HTTP RPC (${chainConfig.key})`,
+      `One of ${chainConfig.rpc.httpEnvNames.join(', ')} is required`,
+    );
   }
 
-  return runCheck('HTTP RPC', async () => {
+  return runCheck(`HTTP RPC (${chainConfig.key})`, async () => {
     const provider = new ethers.JsonRpcProvider(httpUrl);
 
     try {
@@ -47,9 +59,11 @@ async function checkHttpRpc(): Promise<HealthCheckResult> {
       const blockNumber = await withTimeout(provider.getBlockNumber(), 'HTTP RPC block lookup');
 
       return {
+        chain: chainConfig.key,
         network: network.name,
         chainId: network.chainId.toString(),
         blockNumber,
+        envName: chainConfig.rpc.httpEnvName,
       };
     } finally {
       destroyProvider(provider);
@@ -57,13 +71,16 @@ async function checkHttpRpc(): Promise<HealthCheckResult> {
   });
 }
 
-async function checkWebSocketRpc(): Promise<HealthCheckResult> {
-  const wsUrl = process.env.INFURA_WS_URL;
+async function checkWebSocketRpc(chainConfig: ChainConfig): Promise<HealthCheckResult> {
+  const wsUrl = chainConfig.rpc.websocketUrl;
   if (!wsUrl) {
-    return failedConfig('WebSocket RPC', 'INFURA_WS_URL is required');
+    return failedConfig(
+      `WebSocket RPC (${chainConfig.key})`,
+      `One of ${chainConfig.rpc.websocketEnvNames.join(', ')} is required`,
+    );
   }
 
-  return runCheck('WebSocket RPC', async () => {
+  return runCheck(`WebSocket RPC (${chainConfig.key})`, async () => {
     const provider = new ethers.WebSocketProvider(wsUrl);
 
     try {
@@ -71,9 +88,11 @@ async function checkWebSocketRpc(): Promise<HealthCheckResult> {
       const blockNumber = await withTimeout(provider.getBlockNumber(), 'WebSocket RPC block lookup');
 
       return {
+        chain: chainConfig.key,
         network: network.name,
         chainId: network.chainId.toString(),
         blockNumber,
+        envName: chainConfig.rpc.websocketEnvName,
       };
     } finally {
       destroyProvider(provider);
@@ -118,7 +137,7 @@ async function checkDatabase(): Promise<HealthCheckResult> {
   });
 }
 
-async function checkFeishu(dependencyResults: HealthCheckResult[]): Promise<HealthCheckResult> {
+async function checkFeishu(chainConfig: ChainConfig, dependencyResults: HealthCheckResult[]): Promise<HealthCheckResult> {
   const webhookUrl = process.env.FEISHU_WEBHOOK_URL;
   if (!webhookUrl) {
     return skippedCheck('Feishu webhook', 'FEISHU_WEBHOOK_URL is not configured');
@@ -131,7 +150,7 @@ async function checkFeishu(dependencyResults: HealthCheckResult[]): Promise<Heal
         {
           msg_type: 'text',
           content: {
-            text: buildFeishuHealthCheckMessage(dependencyResults),
+            text: buildFeishuHealthCheckMessage(chainConfig, dependencyResults),
           },
         },
         {
@@ -189,7 +208,7 @@ function skippedCheck(name: string, message: string): HealthCheckResult {
   };
 }
 
-function buildFeishuHealthCheckMessage(results: HealthCheckResult[]): string {
+function buildFeishuHealthCheckMessage(chainConfig: ChainConfig, results: HealthCheckResult[]): string {
   const summaryLines = results.map((result) => {
     const suffix = result.status === 'ok'
       ? `OK (${result.durationMs}ms)`
@@ -202,6 +221,7 @@ function buildFeishuHealthCheckMessage(results: HealthCheckResult[]): string {
 
   return [
     'SentinelSOC 健康检查',
+    `链: ${chainConfig.displayName} (${chainConfig.key})`,
     `时间: ${new Date().toISOString()}`,
     ...summaryLines,
   ].join('\n');

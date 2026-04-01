@@ -365,18 +365,24 @@ export class IntegratedTransactionMonitor {
   }
 }
 
+export interface IntegratedMonitorBootstrapOptions {
+  wsUrl: string;
+  httpUrl: string;
+  scorer?: RiskScorer;
+}
+
 /**
  * 从环境变量读取配置并启动一体化监控流程。
  */
-export async function runIntegratedMonitor(): Promise<void> {
-  const wsUrl = process.env.INFURA_WS_URL || process.env.ALCHEMY_WS_URL;
-  const httpUrl = process.env.INFURA_HTTP_URL;
+export async function runIntegratedMonitor(options?: IntegratedMonitorBootstrapOptions): Promise<void> {
+  const wsUrl = options?.wsUrl || process.env.INFURA_WS_URL || process.env.ALCHEMY_WS_URL;
+  const httpUrl = options?.httpUrl || process.env.INFURA_HTTP_URL;
 
   if (!wsUrl || !httpUrl) {
-    logger.error('❌ Missing configuration: INFURA_WS_URL and INFURA_HTTP_URL required');
+    logger.error('❌ Missing configuration: websocket and http RPC URLs are required');
     process.exit(1);
   }
 
-  const monitor = new IntegratedTransactionMonitor(wsUrl, httpUrl);
+  const monitor = new IntegratedTransactionMonitor(wsUrl, httpUrl, options?.scorer);
   await monitor.start();
 }

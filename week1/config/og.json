@@ -1,0 +1,28 @@
+{
+  "key": "og",
+  "displayName": "0G",
+  "networkFamily": "high-performance-evm",
+  "blockTimeMs": 500,
+  "envPrefix": "OG",
+  "rpcEnv": {
+    "websocket": ["OG_WS_URL"],
+    "http": ["OG_HTTP_URL"]
+  },
+  "runtime": {
+    "analysisTimeoutMs": 300,
+    "maxQueueSize": 1000,
+    "workerCount": 4,
+    "riskThreshold": 30,
+    "startupRetryAttempts": 3,
+    "startupRetryDelayMs": 750,
+    "pendingRetryAttempts": 2,
+    "pendingRetryDelayMs": 100
+  },
+  "fastRules": {
+    "highRiskMethodSignatures": ["0x095ea7b3", "0x23b872dd", "0xd505accf"],
+    "blacklistedAddresses": [],
+    "knownAttackContracts": [],
+    "largeValueThresholdWei": "1000000000000000000"
+  },
+  "protocolRegistry": []
+}

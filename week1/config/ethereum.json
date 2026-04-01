@@ -1,0 +1,49 @@
+{
+  "key": "ethereum",
+  "displayName": "Ethereum",
+  "networkFamily": "evm",
+  "blockTimeMs": 12000,
+  "envPrefix": "ETHEREUM",
+  "rpcEnv": {
+    "websocket": ["ETHEREUM_WS_URL", "INFURA_WS_URL", "ALCHEMY_WS_URL"],
+    "http": ["ETHEREUM_HTTP_URL", "INFURA_HTTP_URL"]
+  },
+  "runtime": {
+    "analysisTimeoutMs": 1500,
+    "maxQueueSize": 200,
+    "workerCount": 2,
+    "riskThreshold": 30,
+    "startupRetryAttempts": 4,
+    "startupRetryDelayMs": 1500,
+    "pendingRetryAttempts": 4,
+    "pendingRetryDelayMs": 500
+  },
+  "fastRules": {
+    "highRiskMethodSignatures": ["0x095ea7b3", "0x23b872dd", "0xd505accf"],
+    "blacklistedAddresses": [],
+    "knownAttackContracts": [],
+    "largeValueThresholdWei": "10000000000000000000"
+  },
+  "protocolRegistry": [
+    {
+      "address": "0xe592427a0aece92de3edee1f18e0157c05861564",
+      "protocol": "Uniswap V3"
+    },
+    {
+      "address": "0x68b3465833fb72b5a828ccedac0e142e3e659da7",
+      "protocol": "Uniswap V3"
+    },
+    {
+      "address": "0x7a250d5630b4cf539739df2c5dacb4c659f2488d",
+      "protocol": "Uniswap V2"
+    },
+    {
+      "address": "0x7d2768de32b0b80b7a3454c06bdac94a69ddc7a9",
+      "protocol": "Aave V2"
+    },
+    {
+      "address": "0x794a61358d6845594f94dc1db02a252b5b4814ad",
+      "protocol": "Aave V3"
+    }
+  ]
+}
